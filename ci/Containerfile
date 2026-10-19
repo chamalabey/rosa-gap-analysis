@@ -93,7 +93,7 @@ WORKDIR /gap-analysis
 COPY scripts/ /gap-analysis/scripts/
 
 # Add scripts to PATH for convenience
-ENV PATH="/gap-analysis/scripts:/gap-analysis/scripts/lib:${PATH}"
+ENV PATH="/gap-analysis/scripts:/gap-analysis/scripts/lib:/gap-analysis/scripts/steps:${PATH}"
 
 # Verify all required tools are installed
 RUN echo "Verifying tool installations..." && \

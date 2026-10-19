@@ -169,6 +169,7 @@ See [Validation Checks](docs/validation-checks.md#version-resolution) for detail
 
 - [📘 Overview](docs/overview.md) - What gap analysis does and how it works
 - [✅ Validation Checks](docs/validation-checks.md) - Details about all 13 validation checks
+- [🧩 Workflow Architecture](docs/workflow-architecture.md) - Discrete workflow steps, step contracts, and running steps independently
 - [🚀 Getting Started](docs/getting-started.md) - Installation and basic usage
 - [⚙️ Configuration](docs/configuration.md) - CLI arguments, environment variables, version resolution
 - [🔧 Development](docs/development.md) - Contributing and customization
@@ -194,7 +195,9 @@ gap-analysis/
 │   ├── gap-cluster-install.py # Cluster Install and Delete Validation
 │   ├── gap-e2e-validation.py # Target E2E Validation and alert monitoring
 │   ├── gap-upgrade-e2e.py   # Upgrade Validation from Y-1 to Y with E2E Tests
-│   ├── gap-all.sh           # Run all analyses
+│   ├── gap-all.sh           # Thin driver: sequences the workflow steps
+│   ├── steps/               # Discrete workflow steps (setup, ocm-auth, resolve-versions,
+│   │                        #   offline-checks, live-checks, report, cleanup) + checks-manifest.sh
 │   ├── lib/                 # Shared libraries
 │   └── prod/                # Production scripts (GA readiness validation)
 │

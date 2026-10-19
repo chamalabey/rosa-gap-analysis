@@ -43,7 +43,7 @@ Claude follows an impact-based approach in this repository:
 
 **3-Layer Design:**
 1. Individual analyzers (`scripts/gap-*.py`) - AWS STS, GCP WIF, OCP Admin Gates, Versions & Channels, OCM Version Gate, API Resources and CRD, Critical Alerts, Cluster Install, Target E2E Validation, Upgrade Validation from Y-1 to Y with E2E Tests, Feature Gates
-2. Orchestrator (`scripts/gap-all.sh`) - Runs all analyzers, generates combined reports
+2. Orchestrator (`scripts/gap-all.sh`) - Thin driver that sequences discrete workflow steps (`scripts/steps/*.sh`); each step is independently runnable. See [docs/workflow-architecture.md](docs/workflow-architecture.md)
 3. Shared libraries (`scripts/lib/`, `ci/lib/`) - Version resolution, validation, reporting, CI utilities
 
 **Data Sources:**
@@ -152,9 +152,12 @@ export GH_TOKEN="..." && ./ci/prow-autofix.sh
 
 ## Critical Implementation Details
 
-**gap-all.sh orchestrator:**
+**gap-all.sh orchestrator (thin driver + discrete steps):**
+- Thin driver parses CLI/env, then runs 7 steps in `scripts/steps/`: `setup` → `ocm-auth` → `resolve-versions` → `offline-checks` (checks 1-7) → `live-checks` (checks 9-13 + feature-gates #8 last) → `report` → `cleanup`. Each step is a standalone executable; see [docs/workflow-architecture.md](docs/workflow-architecture.md)
 - Sets `GAP_FULL_REPORT=1` to skip individual HTML (generates JSON only)
-- Feature gates runs last, aggregates reports via `generate-combined-report.py`, exits 1 on failures
+- `scripts/steps/lib/checks-manifest.sh` is the single source of truth for per-check metadata + shared helpers (`run_check`, `read_check_status`, `aggregate_job_result`); adding a check = one row per manifest array + placement in `OFFLINE_CHECKS`/`LIVE_CHECKS` (no driver change)
+- Steps exchange state via `${REPORT_DIR}/gap-run.env` (resolved versions), `status-check-<num>.json`, and `result-check-<step>.rc`; per-step logs go to `${ARTIFACT_DIR:-$REPORT_DIR}/step-<name>.log`
+- Feature gates runs last, `report` step aggregates via `generate-combined-report.py`, exits 1 iff any executed check's process exited non-zero
 
 **Version resolution (openshift_releases.py/sh):**
 - **API endpoint**: Uses `/api/v1/releasestreams/accepted` (single call for both 4-stable and 4-dev-preview)
@@ -294,7 +297,9 @@ from reporters import generate_html_report, generate_json_report
 - `marketplace.py` - AWS/GCP marketplace enablement checks (used by gap-aws-sts, gap-gcp-wif, gap-ga-validation)
 - `prow_artifacts.py` - Prow GCS snapshot/JUnit fetch for Checks #9-13
 - `logging.sh` - Bash logging functions
+- `ocm_auth.sh` - OCM authentication (`ocm_authenticate()`), used by `step-ocm-auth.sh`
 - `openshift-releases.sh` - Bash version resolution (includes `resolve_openshift_version()`, `get_latest_version_for_line()`, `get_previous_z_stream_version()`, `get_all_minor_versions_from_accepted_streams()`)
+- `steps/lib/checks-manifest.sh` - Workflow step metadata + shared helpers (check metadata arrays, `should_run_step`, `run_check`, `read_check_status`, `aggregate_job_result`); sourced by `gap-all.sh` and `scripts/steps/*.sh`
 - `ci/lib/failure-parser.sh` - CI-specific Prow failure parsing utilities
 - `ci/lib/prow-api.sh` - CI-specific Prow API interaction utilities
 - `ci/lib/validate-wif-template.sh` - WIF template validation (service account/role ID constraints)

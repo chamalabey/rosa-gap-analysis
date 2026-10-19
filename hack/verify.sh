@@ -79,30 +79,38 @@ for script in "${help_scripts[@]}"; do
     fi
 done
 
-echo "==> gap-all.sh orchestrates every gap-*.py and runs feature-gates last"
-mapfile -t gap_scripts < <(find scripts -maxdepth 1 -name 'gap-*.py' -type f -printf '%f\n' | sort)
-mapfile -t orchestrated < <(grep -E 'python3 "\$\{SCRIPT_DIR\}/gap-[a-z0-9-]+\.py"' scripts/gap-all.sh \
-    | grep -oE 'gap-[a-z0-9-]+\.py' || true)
+echo "==> checks-manifest.sh references every gap-*.py and feature-gates runs last"
+# The workflow steps (scripts/steps/) run each gap-*.py via the CHECK_SCRIPT map in
+# the shared manifest, driven by gap-all.sh. Verify the manifest covers every
+# gap-*.py and that feature-gates is the last entry in the execution order.
+gap_scripts=()
+while IFS= read -r _gs_path; do
+    gap_scripts+=("$(basename "${_gs_path}")")
+done < <(find scripts -maxdepth 1 -name 'gap-*.py' -type f | sort)
 
-if [[ ${#orchestrated[@]} -eq 0 ]]; then
-    fail "No python3 gap-*.py invocations found in scripts/gap-all.sh"
+# shellcheck source=scripts/steps/lib/checks-manifest.sh disable=SC1091
+if ! source scripts/steps/lib/checks-manifest.sh 2>/dev/null; then
+    fail "Could not source scripts/steps/lib/checks-manifest.sh"
+elif [[ ${#ALL_CHECKS[@]} -eq 0 ]]; then
+    fail "ALL_CHECKS is empty in scripts/steps/lib/checks-manifest.sh"
 else
-    last="${orchestrated[-1]}"
-    if [[ "${last}" != "gap-feature-gates.py" ]]; then
-        fail "Feature gates must run last in gap-all.sh (last invocation is ${last})"
+    last_step="${ALL_CHECKS[-1]}"
+    if [[ "${CHECK_SCRIPT[${last_step}]:-}" != "gap-feature-gates.py" ]]; then
+        fail "Feature gates must run last (ALL_CHECKS ends with step '${last_step}' -> ${CHECK_SCRIPT[${last_step}]:-<none>})"
     fi
+    for name in "${gap_scripts[@]}"; do
+        found=0
+        for step in "${ALL_CHECKS[@]}"; do
+            if [[ "${CHECK_SCRIPT[${step}]:-}" == "${name}" ]]; then
+                found=1
+                break
+            fi
+        done
+        if [[ "${found}" -eq 0 ]]; then
+            fail "${name} is not referenced in scripts/steps/lib/checks-manifest.sh"
+        fi
+    done
 fi
-
-declare -A orchestrated_set=()
-for name in "${orchestrated[@]}"; do
-    orchestrated_set["${name}"]=1
-done
-
-for name in "${gap_scripts[@]}"; do
-    if [[ -z "${orchestrated_set[${name}]+x}" ]]; then
-        fail "${name} is not invoked from scripts/gap-all.sh"
-    fi
-done
 
 if [[ "${FAILED}" -ne 0 ]]; then
     echo "verify FAILED" >&2

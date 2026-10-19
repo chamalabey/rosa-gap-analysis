@@ -28,11 +28,12 @@ Read these rules first:
 | 13 | `gap-upgrade-e2e.py` | `upgrade-e2e` | FAIL → exit 1 |
 
 **Orchestration notes:**
-- **13 checks** today; next new check is **#14** (insert before `feature-gates` in `gap-all.sh`).
-- `gap-all.sh` sets `GAP_FULL_REPORT=1` by default (per-check JSON + `status-check-<n>.json` + combined HTML/JSON).
+- **13 checks** today; next new check is **#14** (add to `OFFLINE_CHECKS`/`LIVE_CHECKS` in `scripts/steps/lib/checks-manifest.sh`, before `feature-gates`).
+- `gap-all.sh` is a thin driver over discrete steps in `scripts/steps/` (see `docs/workflow-architecture.md`); per-check metadata/logic lives in `scripts/steps/lib/checks-manifest.sh`.
+- `gap-all.sh` sets `GAP_FULL_REPORT=1` by default (per-check JSON + `status-check-<n>.json` + `result-check-<step>.rc` + combined HTML/JSON + per-step `step-<name>.log`).
 - `--steps` values: `aws,gcp,ocp,versions-channels,ocm-version-gate,api-resources,critical-alerts,cluster-install,e2e-validation,upgrade-e2e,feature-gates` (not `ocp-gate`).
 - Standalone GA script: `scripts/prod/gap-ga-validation.py` (not in `gap-all.sh` / CI pipeline).
-- Unit tests: `make test` (`tests/`).
+- Unit tests: `make test` (`tests/`), incl. `tests/test_steps.py` for the workflow steps.
 
 ## Orchestration Instructions
 
@@ -354,16 +355,26 @@ if __name__ == '__main__':
 8. Cluster Install (check 11) — step `cluster-install`
 9. Target E2E (check 12) — step `e2e-validation`
 10. Upgrade E2E (check 13) — step `upgrade-e2e`
-11. **[NEW SCRIPT HERE]** (check #14+) — insert before feature gates
-12. Feature Gates (check 8) — step `feature-gates` — **ALWAYS LAST**
+11. **[NEW CHECK HERE]** (check #14+) — add to `OFFLINE_CHECKS` or `LIVE_CHECKS` (before feature-gates)
+12. Feature Gates (check 8) — appended last in `LIVE_CHECKS` — **ALWAYS LAST**
 
-When adding a script, update in `gap-all.sh`:
-- `STEPS` validation list and default `STEPS_ARRAY`
-- `check_num`, `check_display_num`, `check_name`, `check_type` (`standard` vs `informational`)
-- `should_run_step` execution block + `read_check_status`
-- `usage()` help text
+`gap-all.sh` is now a thin driver that sequences the discrete step scripts in
+`scripts/steps/` (see `docs/workflow-architecture.md`). Per-check logic lives in
+`scripts/steps/lib/checks-manifest.sh`, **not** inline in `gap-all.sh`.
 
-Exit logic uses `check_results` + `check_type` — informational validation FAIL must still exit 0 from the Python script; only execution errors should set `check_results=1`.
+When adding a check, update `scripts/steps/lib/checks-manifest.sh`:
+- Add one row to each metadata array: `CHECK_SCRIPT`, `CHECK_NUM`, `CHECK_DISPLAY_NUM`, `CHECK_NAME`, `CHECK_TYPE` (`standard` vs `informational`), `CHECK_COUNT_FIELD`
+- Add the step name to `OFFLINE_CHECKS` (no cluster/snapshot) or `LIVE_CHECKS` (Prow data); `ALL_CHECKS` and the driver's `--steps` validation pick it up automatically
+- Keep `feature-gates` LAST in `LIVE_CHECKS`
+- Update `usage()` help text in `gap-all.sh` (the `--steps` list)
+
+The step scripts (`step-offline-checks.sh` / `step-live-checks.sh`) and the driver
+require **no** changes for a new check — they iterate the manifest lists.
+
+Exit logic: the `report` step's `aggregate_job_result` fails the job iff any
+executed check's **process** exited non-zero (recorded in `result-check-<step>.rc`).
+Informational validation FAIL must still exit 0 from the Python script; only
+execution errors cause a non-zero process exit.
 
 ## Skill File Structure
 
