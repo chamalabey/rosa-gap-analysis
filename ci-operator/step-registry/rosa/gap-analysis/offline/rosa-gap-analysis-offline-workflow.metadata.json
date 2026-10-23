@@ -1,0 +1,19 @@
+{
+	"path": "rosa/gap-analysis/offline/rosa-gap-analysis-offline-workflow.yaml",
+	"owners": {
+		"approvers": [
+			"tiwillia",
+			"dustman9000",
+			"bmeng",
+			"ravitri",
+			"rbhilare"
+		],
+		"reviewers": [
+			"tiwillia",
+			"dustman9000",
+			"bmeng",
+			"ravitri",
+			"rbhilare"
+		]
+	}
+}
