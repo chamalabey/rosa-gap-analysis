@@ -5,6 +5,11 @@ job ([ROSAENG-15179](https://redhat.atlassian.net/browse/ROSAENG-15179)): the
 `scripts/gap-all.sh` job expressed as discrete, independently-runnable,
 composable steps in the openshift/release step-registry format.
 
+It provides three workflows for the three gap-analysis modes:
+**aggregated** (full validation + combined report), **independent** (every check
+runs on its own and produces its own per-check report), and **ga-readiness**
+(ROSA Production GA readiness validation + detailed report).
+
 Source lives at `ci-operator/step-registry/rosa/gap-analysis/` (mirror of the
 openshift/release layout, to be contributed upstream).
 
@@ -47,16 +52,36 @@ Checks (one ref per global gap-analysis check; mapping to `scripts/gap-*.py`):
 > `critical-alerts-diff` is named to avoid colliding with the existing **capture**
 > ref `rosa-gap-analysis-critical-alerts` (see "Capture vs analysis" below).
 
-## Chain and workflow
+Plus the GA-readiness ref:
+
+| Ref | Script | Type |
+|-----|--------|------|
+| `rosa-gap-analysis-ga-validation` | scripts/prod/gap-ga-validation.py | standard (self-reporting detailed GA-readiness report) |
+
+## Chain and workflows
 
 - **Chain** `rosa-gap-analysis-checks` — all 11 checks in `gap-all.sh` order
   (1-7, then 9-13, feature-gates #8 last). Drop it into any workflow's `test`, or
   inline the refs to add/remove/reorder.
-- **Workflow** `rosa-gap-analysis-offline` — the full job with no cluster
-  provisioning:
-  - `pre`: setup → ocm-auth → resolve-versions
-  - `test`: `rosa-gap-analysis-checks` chain
-  - `post`: report → cleanup
+
+Three workflows cover the three gap-analysis modes (all without cluster
+provisioning). Each check ref self-reports (its `gap-*.py` writes per-check
+HTML+JSON), and the `report` ref renders from whatever checks are present, so a
+report can be produced for a single check or any subset.
+
+1. **`rosa-gap-analysis-aggregated`** — full validation + combined report.
+   - `pre`: setup → ocm-auth → resolve-versions
+   - `test`: `rosa-gap-analysis-checks` chain
+   - `post`: report (combined) → cleanup
+2. **`rosa-gap-analysis-independent`** — every check runs independently and
+   produces its own per-check report; no combined aggregation.
+   - `pre`: setup → ocm-auth → resolve-versions
+   - `test`: `rosa-gap-analysis-checks` chain (each ref self-reports)
+   - `post`: cleanup
+3. **`rosa-gap-analysis-ga-readiness`** — GA readiness validation + detailed report.
+   - `pre`: setup → ocm-auth → resolve-versions
+   - `test`: `rosa-gap-analysis-ga-validation` (self-reporting detailed report)
+   - `post`: cleanup
 
 ## Step contract
 
@@ -78,19 +103,58 @@ and non-zero only on execution error; `report` never owns the verdict.
 `test` steps are fail-fast — to run every check in one pass and still fail on any
 standard FAIL, move the check refs into `post` with `best_effort: false`.
 
-## Running a step independently
+## Running checks individually
 
-Each ref's `commands.sh` defaults `GAP_SCRIPTS_DIR` to the image path
-`/gap-analysis/scripts`; override it to run locally against this repo's `scripts/`:
+Every check is an independent ref that produces its **own** per-check report
+(HTML+JSON) — you can run one, a subset, or all of them without any aggregation.
+
+**In CI:** use the `rosa-gap-analysis-independent` workflow (runs every check as its
+own step, each self-reporting). To run only a subset, inline just the refs you want
+from the `rosa-gap-analysis-checks` chain into a workflow's `test` phase — add,
+remove, or reorder freely.
+
+**Check step names** (directory = ref `rosa-gap-analysis-<name>`):
+`aws-sts`, `gcp-wif`, `ocp-gate-ack`, `versions-channels`, `ocm-version-gate`,
+`api-resources`, `critical-alerts-diff`, `cluster-install`, `e2e-validation`,
+`upgrade-e2e`, `feature-gates` — plus `ga-validation` (GA readiness).
+
+**Locally**, each `commands.sh` defaults `GAP_SCRIPTS_DIR` to the image path
+`/gap-analysis/scripts`; override it to run against this repo's `scripts/`
+(use a `python3` that has `PyYAML`+`Jinja2`, as the image does):
 
 ```bash
 export GAP_SCRIPTS_DIR="$PWD/scripts"
 export SHARED_DIR=$(mktemp -d) ARTIFACT_DIR=$(mktemp -d)
-BASELINE=4.21.15 TARGET=4.22.0-rc.3 \
-  ci-operator/step-registry/rosa/gap-analysis/resolve-versions/rosa-gap-analysis-resolve-versions-commands.sh
-ci-operator/step-registry/rosa/gap-analysis/feature-gates/rosa-gap-analysis-feature-gates-commands.sh
-ci-operator/step-registry/rosa/gap-analysis/report/rosa-gap-analysis-report-commands.sh
+REG=ci-operator/step-registry/rosa/gap-analysis
+
+# (optional) resolve BASELINE/TARGET once -> $SHARED_DIR/gap-versions.env, which
+# every check then reads automatically:
+BASELINE=4.21.15 TARGET=4.22.0-rc.3 "$REG"/resolve-versions/rosa-gap-analysis-resolve-versions-commands.sh
+
+# run ANY single check (swap aws-sts for any name above):
+check=aws-sts
+"$REG/$check/rosa-gap-analysis-$check-commands.sh"
+
+# the check writes its own report here (and copies it to $ARTIFACT_DIR):
+ls "$SHARED_DIR/gap-analysis-reports"/gap-analysis-*.{html,json}
 ```
+
+A check can also take versions directly instead of the resolve step:
+
+```bash
+OPENSHIFT_VERSION=4.22 "$REG"/feature-gates/rosa-gap-analysis-feature-gates-commands.sh
+# or: BASELINE=4.21.15 TARGET=4.22.0-rc.3 "$REG"/aws-sts/rosa-gap-analysis-aws-sts-commands.sh
+```
+
+To build the combined report from whatever checks ran, run the report step after:
+
+```bash
+"$REG"/report/rosa-gap-analysis-report-commands.sh
+```
+
+(Standalone, without the registry, you can also run the analyzers directly:
+`python3 ./scripts/gap-aws-sts.py --version 4.22` — see
+[getting-started.md](getting-started.md).)
 
 ## Image requirement
 
@@ -98,7 +162,8 @@ All refs use `from: gap-analysis` — an image with python3 + the `scripts/gap-*
 analyzers (and ideally `ocm`/`rosa` for the OCM/ROSA-backed checks), built from this
 repo's `ci/Containerfile`. The consuming ci-operator config must make that image
 available (e.g. via `base_images`/`images`). Wiring a ci-operator config/job that
-uses `rosa-gap-analysis-offline` is tracked separately.
+uses one of the workflows (`rosa-gap-analysis-aggregated` / `-independent` /
+`-ga-readiness`) is tracked separately.
 
 ## Capture vs analysis
 

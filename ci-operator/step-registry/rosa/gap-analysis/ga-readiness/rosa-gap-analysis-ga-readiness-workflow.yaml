@@ -1,0 +1,24 @@
+workflow:
+  as: rosa-gap-analysis-ga-readiness
+  steps:
+    env:
+      OPENSHIFT_VERSION: ""
+      OCM_LOGIN_ENV: "staging"
+    pre:
+    - ref: rosa-gap-analysis-setup
+    - ref: rosa-gap-analysis-ocm-auth
+    - ref: rosa-gap-analysis-resolve-versions
+    test:
+    - ref: rosa-gap-analysis-ga-validation
+    post:
+    - ref: rosa-gap-analysis-cleanup
+  documentation: |-
+    ROSA Production GA Readiness validation (workflow 3 of 3): runs the
+    ga-validation step (scripts/prod/gap-ga-validation.py), which produces a
+    detailed GA-readiness report (HTML+JSON) and fails the job if the target is not
+    GA-ready. No cluster provisioning; the GA validation step is self-reporting so
+    no aggregate report step is needed.
+      pre:  setup -> ocm-auth -> resolve-versions
+      test: ga-validation (detailed GA-readiness report)
+      post: cleanup
+    Set OPENSHIFT_VERSION (e.g. 4.22 or 5.0) or override BASELINE/TARGET.

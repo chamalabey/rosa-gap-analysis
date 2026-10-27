@@ -1,5 +1,5 @@
 {
-	"path": "rosa/gap-analysis/offline/rosa-gap-analysis-offline-workflow.yaml",
+	"path": "rosa/gap-analysis/aggregated/rosa-gap-analysis-aggregated-workflow.yaml",
 	"owners": {
 		"approvers": [
 			"tiwillia",
