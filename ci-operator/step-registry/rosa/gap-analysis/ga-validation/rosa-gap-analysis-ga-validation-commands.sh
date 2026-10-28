@@ -46,7 +46,7 @@ if [[ -n "${BASELINE:-}" && -n "${TARGET:-}" ]]; then
 elif [[ -n "${OPENSHIFT_VERSION:-}" ]]; then
   version_args=(--version "${OPENSHIFT_VERSION}")
 else
-  log "ERROR: no version input; run rosa-gap-analysis-resolve-versions first or set OPENSHIFT_VERSION (or BASELINE+TARGET)"
+  log "ERROR: no version input; set OPENSHIFT_VERSION (or BASELINE+TARGET), or run rosa-gap-analysis-resolve-versions first"
   exit 1
 fi
 

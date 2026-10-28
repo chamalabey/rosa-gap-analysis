@@ -5,10 +5,13 @@ job ([ROSAENG-15179](https://redhat.atlassian.net/browse/ROSAENG-15179)): the
 `scripts/gap-all.sh` job expressed as discrete, independently-runnable,
 composable steps in the openshift/release step-registry format.
 
-It provides three workflows for the three gap-analysis modes:
-**aggregated** (full validation + combined report), **independent** (every check
-runs on its own and produces its own per-check report), and **ga-readiness**
-(ROSA Production GA readiness validation + detailed report).
+It provides two workflows:
+**aggregated** (full validation + combined report) and **independent** (every check
+runs on its own and produces its own per-check report).
+
+GA readiness validation (`ga-validation`) is **not part of any CI workflow** — it is
+a standalone step run manually/individually by SREs (see
+[ga-readiness-validation.md](ga-readiness-validation.md)).
 
 Source lives at `ci-operator/step-registry/rosa/gap-analysis/` (mirror of the
 openshift/release layout, to be contributed upstream).
@@ -52,11 +55,13 @@ Checks (one ref per global gap-analysis check; mapping to `scripts/gap-*.py`):
 > `critical-alerts-diff` is named to avoid colliding with the existing **capture**
 > ref `rosa-gap-analysis-critical-alerts` (see "Capture vs analysis" below).
 
-Plus the GA-readiness ref:
+Plus a standalone, **individual-only** GA-readiness ref — intentionally **not** in
+any workflow or the `rosa-gap-analysis-checks` chain (GA readiness is run manually by
+SREs, not by CI):
 
 | Ref | Script | Type |
 |-----|--------|------|
-| `rosa-gap-analysis-ga-validation` | scripts/prod/gap-ga-validation.py | standard (self-reporting detailed GA-readiness report) |
+| `rosa-gap-analysis-ga-validation` | scripts/prod/gap-ga-validation.py | standalone GA-readiness; self-reporting detailed report; **run individually only, never part of a CI workflow** |
 
 ## Chain and workflows
 
@@ -64,10 +69,10 @@ Plus the GA-readiness ref:
   (1-7, then 9-13, feature-gates #8 last). Drop it into any workflow's `test`, or
   inline the refs to add/remove/reorder.
 
-Three workflows cover the three gap-analysis modes (all without cluster
-provisioning). Each check ref self-reports (its `gap-*.py` writes per-check
-HTML+JSON), and the `report` ref renders from whatever checks are present, so a
-report can be produced for a single check or any subset.
+Two workflows cover the CI gap-analysis modes (both without cluster provisioning).
+Each check ref self-reports (its `gap-*.py` writes per-check HTML+JSON), and the
+`report` ref renders from whatever checks are present, so a report can be produced
+for a single check or any subset.
 
 1. **`rosa-gap-analysis-aggregated`** — full validation + combined report.
    - `pre`: setup → ocm-auth → resolve-versions
@@ -78,10 +83,10 @@ report can be produced for a single check or any subset.
    - `pre`: setup → ocm-auth → resolve-versions
    - `test`: `rosa-gap-analysis-checks` chain (each ref self-reports)
    - `post`: cleanup
-3. **`rosa-gap-analysis-ga-readiness`** — GA readiness validation + detailed report.
-   - `pre`: setup → ocm-auth → resolve-versions
-   - `test`: `rosa-gap-analysis-ga-validation` (self-reporting detailed report)
-   - `post`: cleanup
+
+GA readiness is intentionally **not** a workflow: `rosa-gap-analysis-ga-validation`
+is run individually only (manually by SREs), never wired into a CI workflow or the
+chain.
 
 ## Step contract
 
@@ -162,8 +167,8 @@ All refs use `from: gap-analysis` — an image with python3 + the `scripts/gap-*
 analyzers (and ideally `ocm`/`rosa` for the OCM/ROSA-backed checks), built from this
 repo's `ci/Containerfile`. The consuming ci-operator config must make that image
 available (e.g. via `base_images`/`images`). Wiring a ci-operator config/job that
-uses one of the workflows (`rosa-gap-analysis-aggregated` / `-independent` /
-`-ga-readiness`) is tracked separately.
+uses one of the workflows (`rosa-gap-analysis-aggregated` / `-independent`) is
+tracked separately.
 
 ## Capture vs analysis
 

@@ -22,12 +22,15 @@ ref:
     default: "staging"
     documentation: OCM environment for login; OCM/ROSA-backed checks degrade gracefully if unavailable.
   documentation: |-
-    Runs the ROSA Production GA Readiness validation (scripts/prod/gap-ga-validation.py)
-    and writes its own detailed GA-readiness report (HTML+JSON) into
-    ${SHARED_DIR}/gap-analysis-reports and ${ARTIFACT_DIR}. Checks channel
+    ROSA Production GA Readiness validation (scripts/prod/gap-ga-validation.py),
+    producing its own detailed GA-readiness report (HTML+JSON). Checks channel
     availability, ROSA CLI compatibility, marketplace availability (AWS/GCP),
-    version gates, CI job status, SOP/runbook updates, and GCP WIF compatibility.
-    Exits non-zero when the target is not GA-ready (fails the step). Reads resolved
-    versions from ${SHARED_DIR}/gap-versions.env (or env). This is a self-contained
-    report (it does not need the aggregate report step). Requires the gap-analysis
-    image (python3 + scripts/prod/gap-ga-validation.py).
+    version gates, CI job status, SOP/runbook updates, and GCP WIF compatibility;
+    exits non-zero when the target is not GA-ready.
+
+    INTENTIONALLY STANDALONE: GA readiness is run manually by SREs and is NOT part
+    of any CI workflow or the rosa-gap-analysis-checks chain. This ref exists only
+    so GA readiness can be executed individually; it must not be added to a
+    workflow/chain. See docs/ga-readiness-validation.md.
+
+    Requires the gap-analysis image (python3 + scripts/prod/gap-ga-validation.py).
